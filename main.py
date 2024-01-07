@@ -36,7 +36,7 @@ examples = [
     ["app/assets/sa_235130.jpg"],
 ]
 model = MODELS.build(model_cfg.model)
-device = torch.device('cuda:0')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = model.to(device=device)
 model = model.eval()
 model.init_weights()

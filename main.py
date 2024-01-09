@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 # mm libs
 from mmdet.registry import MODELS
-from mmengine import Config
+from mmengine import Config, print_log
 from mmengine.structures import InstanceData
 
 from ext.class_names.lvis_list import LVIS_CLASSES
@@ -89,7 +89,7 @@ def get_points_with_draw(image, img_state, evt: gr.SelectData):
     label = 'Add Mask'
 
     x, y = evt.index[0], evt.index[1]
-    print(f"Point: {x}_{y}")
+    print_log(f"Point: {x}_{y}", logger='current')
     point_radius, point_color = 10, (97, 217, 54) if label == "Add Mask" else (237, 34, 13)
 
     img_state.selected_points.append([x, y])
@@ -116,7 +116,7 @@ def get_bbox_with_draw(image, img_state, evt: gr.SelectData):
     else:
         raise ValueError(f"Cannot be {len(img_state.selected_bboxes)}")
 
-    print(f"box_list: {img_state.selected_bboxes}")
+    print_log(f"box_list: {img_state.selected_bboxes}", logger='current')
 
     draw = ImageDraw.Draw(image)
     draw.ellipse(
@@ -233,14 +233,22 @@ def extract_img_feat(img, img_state):
     new_h = int(h * scale)
     img = img.resize((new_w, new_h), resample=Image.Resampling.BILINEAR)
     img_numpy = np.array(img)
-    print(f"Successfully loaded an image with size {new_w} x {new_h}")
+    print_log(f"Successfully loaded an image with size {new_w} x {new_h}", logger='current')
 
-    img_tensor = torch.tensor(img_numpy, device=device, dtype=torch.float32).permute((2, 0, 1))[None]
-    img_tensor = (img_tensor - mean) / std
-    img_tensor = F.pad(img_tensor, (0, IMG_SIZE - new_w, 0, IMG_SIZE - new_h), 'constant', 0)
-    feat_dict = model.extract_feat(img_tensor)
-    img_state.set_img(img_numpy, feat_dict)
-    print(f"Successfully generated the image feats.")
+    try:
+        img_tensor = torch.tensor(img_numpy, device=device, dtype=torch.float32).permute((2, 0, 1))[None]
+        img_tensor = (img_tensor - mean) / std
+        img_tensor = F.pad(img_tensor, (0, IMG_SIZE - new_w, 0, IMG_SIZE - new_h), 'constant', 0)
+        feat_dict = model.extract_feat(img_tensor)
+        img_state.set_img(img_numpy, feat_dict)
+        print_log(f"Successfully generated the image feats.", logger='current')
+    except RuntimeError as e:
+        if "CUDA out of memory" in str(e):
+            img_state.clear()
+            print_log(f"CUDA OOM! please try again later", logger='current')
+            return None, None, "CUDA OOM, please try again later."
+        else:
+            raise
     return img, None, "Please try to click something."
 
 

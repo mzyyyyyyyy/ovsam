@@ -80,9 +80,8 @@ class IMGState:
             for k in self.img_feat:
                 if isinstance(self.img_feat[k], torch.Tensor):
                     self.img_feat[k] = self.img_feat[k].to(device)
-                else:
-                    for i in range(len(self.img_feat[k])):
-                        self.img_feat[k][i] = self.img_feat[k][i].to(device)
+                elif isinstance(self.img_feat[k], tuple):
+                    self.img_feat[k] = tuple(v.to(device) for v in self.img_feat[k])
 
     @property
     def available(self):

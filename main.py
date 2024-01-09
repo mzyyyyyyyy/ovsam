@@ -84,8 +84,6 @@ IMG_SIZE = 1024
 
 
 def get_points_with_draw(image, img_state, evt: gr.SelectData):
-    w, h = image.size
-    assert max(w, h) == IMG_SIZE, f"{w} x {h}"
     label = 'Add Mask'
 
     x, y = evt.index[0], evt.index[1]
@@ -143,23 +141,32 @@ def segment_with_points(
         image,
         img_state,
 ):
-    assert not img_state.available
+    if img_state.available:
+        return None, None, "State Error, please try again."
     output_img = img_state.img
     h, w = output_img.shape[:2]
 
     input_points = torch.tensor(img_state.selected_points, dtype=torch.float32, device=device)
-
     prompts = InstanceData(
         point_coords=input_points[None],
     )
-    masks, cls_pred = model.extract_masks(img_state.img_feat, prompts)
 
-    masks = masks[0, 0, :h, :w]
-    masks = masks > 0.5
+    try:
+        masks, cls_pred = model.extract_masks(img_state.img_feat, prompts)
 
-    cls_pred = cls_pred[0][0]
-    scores, indices = torch.topk(cls_pred, 1)
-    scores, indices = scores.tolist(), indices.tolist()
+        masks = masks[0, 0, :h, :w]
+        masks = masks > 0.5
+
+        cls_pred = cls_pred[0][0]
+        scores, indices = torch.topk(cls_pred, 1)
+        scores, indices = scores.tolist(), indices.tolist()
+    except RuntimeError as e:
+        if "CUDA out of memory" in str(e):
+            img_state.clear()
+            print_log(f"CUDA OOM! please try again later", logger='current')
+            return None, None, "CUDA OOM, please try again later."
+        else:
+            raise
     names = []
     for ind in indices:
         names.append(LVIS_NAMES[ind].replace('_', ' '))
@@ -182,7 +189,8 @@ def segment_with_bbox(
         image,
         img_state
 ):
-    assert not img_state.available
+    if img_state.available:
+        return None, None, "State Error, please try again."
     if len(img_state.selected_bboxes) != 2:
         return image, None, ""
     output_img = img_state.img
@@ -196,18 +204,26 @@ def segment_with_bbox(
         max(box_points[0][1], box_points[1][1]),
     )
     input_bbox = torch.tensor(bbox, dtype=torch.float32, device=device)
-
     prompts = InstanceData(
         bboxes=input_bbox[None],
     )
-    masks, cls_pred = model.extract_masks(img_state.img_feat, prompts)
 
-    masks = masks[0, 0, :h, :w]
-    masks = masks > 0.5
+    try:
+        masks, cls_pred = model.extract_masks(img_state.img_feat, prompts)
 
-    cls_pred = cls_pred[0][0]
-    scores, indices = torch.topk(cls_pred, 1)
-    scores, indices = scores.tolist(), indices.tolist()
+        masks = masks[0, 0, :h, :w]
+        masks = masks > 0.5
+
+        cls_pred = cls_pred[0][0]
+        scores, indices = torch.topk(cls_pred, 1)
+        scores, indices = scores.tolist(), indices.tolist()
+    except RuntimeError as e:
+        if "CUDA out of memory" in str(e):
+            img_state.clear()
+            print_log(f"CUDA OOM! please try again later", logger='current')
+            return None, None, "CUDA OOM, please try again later."
+        else:
+            raise
     names = []
     for ind in indices:
         names.append(LVIS_NAMES[ind].replace('_', ' '))
@@ -259,6 +275,9 @@ def clear_everything(img_state):
 
 def clean_prompts(img_state):
     img_state.clean()
+    if img_state.img is None:
+        img_state.clear()
+        return None, None, "Please try to click something."
     return Image.fromarray(img_state.img), None, "Please try to click something."
 
 

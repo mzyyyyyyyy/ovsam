@@ -75,6 +75,15 @@ class IMGState:
         self.selected_points_labels = []
         self.selected_bboxes = []
 
+    def to_device(self, device=device):
+        if self.img_feat is not None:
+            for k in self.img_feat:
+                if isinstance(self.img_feat[k], torch.Tensor):
+                    self.img_feat[k] = self.img_feat[k].to(device)
+                else:
+                    for i in range(len(self.img_feat[k])):
+                        self.img_feat[k][i] = self.img_feat[k][i].to(device)
+
     @property
     def available(self):
         return self.available_to_set
@@ -152,7 +161,9 @@ def segment_with_points(
     )
 
     try:
+        img_state.to_device()
         masks, cls_pred = model.extract_masks(img_state.img_feat, prompts)
+        img_state.to_device('cpu')
 
         masks = masks[0, 0, :h, :w]
         masks = masks > 0.5
@@ -209,7 +220,9 @@ def segment_with_bbox(
     )
 
     try:
+        img_state.to_device()
         masks, cls_pred = model.extract_masks(img_state.img_feat, prompts)
+        img_state.to_device('cpu')
 
         masks = masks[0, 0, :h, :w]
         masks = masks > 0.5
@@ -257,6 +270,7 @@ def extract_img_feat(img, img_state):
         img_tensor = F.pad(img_tensor, (0, IMG_SIZE - new_w, 0, IMG_SIZE - new_h), 'constant', 0)
         feat_dict = model.extract_feat(img_tensor)
         img_state.set_img(img_numpy, feat_dict)
+        img_state.to_device('cpu')
         print_log(f"Successfully generated the image feats.", logger='current')
     except RuntimeError as e:
         if "CUDA out of memory" in str(e):

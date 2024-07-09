@@ -106,7 +106,7 @@ def get_points_with_draw(image, img_state, evt: gr.SelectData):
         [(x - point_radius, y - point_radius), (x + point_radius, y + point_radius)],
         fill=point_color,
     )
-    return image
+    return img_state, image
 
 
 def get_bbox_with_draw(image, img_state, evt: gr.SelectData):
@@ -142,7 +142,7 @@ def get_bbox_with_draw(image, img_state, evt: gr.SelectData):
             outline=box_color,
             width=box_outline
         )
-    return image
+    return img_state, image
 
 
 def segment_with_points(
@@ -192,7 +192,7 @@ def segment_with_points(
     output_img = (output_img * 0.7 + color * 0.3).astype(np.uint8)
 
     output_img = Image.fromarray(output_img)
-    return image, output_img, cls_info
+    return img_state, image, output_img, cls_info
 
 
 def segment_with_bbox(
@@ -251,7 +251,7 @@ def segment_with_bbox(
     output_img = (output_img * 0.7 + color * 0.3).astype(np.uint8)
 
     output_img = Image.fromarray(output_img)
-    return image, output_img, cls_info
+    return img_state, image, output_img, cls_info
 
 
 def extract_img_feat(img, img_state):
@@ -278,12 +278,12 @@ def extract_img_feat(img, img_state):
             return None, None, "CUDA OOM, please try again later."
         else:
             raise
-    return img, None, "Please try to click something."
+    return img_state, img, None, "Please try to click something."
 
 
 def clear_everything(img_state):
     img_state.clear()
-    return None, None, "Please try to click something."
+    return img_state, None, None, "Please try to click something."
 
 
 def clean_prompts(img_state):
@@ -291,7 +291,7 @@ def clean_prompts(img_state):
     if img_state.img is None:
         img_state.clear()
         return None, None, "Please try to click something."
-    return Image.fromarray(img_state.img), None, "Please try to click something."
+    return img_state, Image.fromarray(img_state.img), None, "Please try to click something."
 
 
 def register_point_mode():
@@ -325,7 +325,7 @@ def register_point_mode():
                 gr.Examples(
                     examples=examples,
                     inputs=[cond_img_p, img_state_points],
-                    outputs=[cond_img_p, segm_img_p, cls_info],
+                    outputs=[img_state_points, cond_img_p, segm_img_p, cls_info],
                     examples_per_page=12,
                     fn=extract_img_feat,
                     run_on_click=True
@@ -355,7 +355,7 @@ def register_point_mode():
                 gr.Examples(
                     examples=examples,
                     inputs=[cond_img_bbox, img_state_bbox],
-                    outputs=[cond_img_bbox, segm_img_bbox, cls_info_bbox],
+                    outputs=[img_state_bbox, cond_img_bbox, segm_img_bbox, cls_info_bbox],
                     examples_per_page=12,
                     fn=extract_img_feat,
                     run_on_click=True
@@ -365,76 +365,76 @@ def register_point_mode():
     cond_img_p.upload(
         extract_img_feat,
         [cond_img_p, img_state_points],
-        outputs=[cond_img_p, segm_img_p, cls_info]
+        outputs=[img_state_points, cond_img_p, segm_img_p, cls_info]
     )
     cond_img_bbox.upload(
         extract_img_feat,
         [cond_img_bbox, img_state_bbox],
-        outputs=[cond_img_bbox, segm_img_bbox, cls_info]
+        outputs=[img_state_bbox, cond_img_bbox, segm_img_bbox, cls_info]
     )
 
     # get user added points
     cond_img_p.select(
         get_points_with_draw,
         [cond_img_p, img_state_points],
-        cond_img_p
+        outputs=[img_state_points, cond_img_p]
     ).then(
         segment_with_points,
         inputs=[cond_img_p, img_state_points],
-        outputs=[cond_img_p, segm_img_p, cls_info]
+        outputs=[img_state_points, cond_img_p, segm_img_p, cls_info]
     )
     cond_img_bbox.select(
         get_bbox_with_draw,
         [cond_img_bbox, img_state_bbox],
-        cond_img_bbox
+        outputs=[img_state_bbox, cond_img_bbox]
     ).then(
         segment_with_bbox,
         inputs=[cond_img_bbox, img_state_bbox],
-        outputs=[cond_img_bbox, segm_img_bbox, cls_info_bbox]
+        outputs=[img_state_bbox, cond_img_bbox, segm_img_bbox, cls_info_bbox]
     )
 
     # clean prompts
     clean_btn_p.click(
         clean_prompts,
         inputs=[img_state_points],
-        outputs=[cond_img_p, segm_img_p, cls_info]
+        outputs=[img_state_points, cond_img_p, segm_img_p, cls_info]
     )
     clean_btn_bbox.click(
         clean_prompts,
         inputs=[img_state_bbox],
-        outputs=[cond_img_bbox, segm_img_bbox, cls_info_bbox]
+        outputs=[img_state_bbox, cond_img_bbox, segm_img_bbox, cls_info_bbox]
     )
 
     # clear
     clear_btn_p.click(
         clear_everything,
         inputs=[img_state_points],
-        outputs=[cond_img_p, segm_img_p, cls_info]
+        outputs=[img_state_points, cond_img_p, segm_img_p, cls_info]
     )
     cond_img_p.clear(
         clear_everything,
         inputs=[img_state_points],
-        outputs=[cond_img_p, segm_img_p, cls_info]
+        outputs=[img_state_points, cond_img_p, segm_img_p, cls_info]
     )
     segm_img_p.clear(
         clear_everything,
         inputs=[img_state_points],
-        outputs=[cond_img_p, segm_img_p, cls_info]
+        outputs=[img_state_points, cond_img_p, segm_img_p, cls_info]
     )
     clear_btn_bbox.click(
         clear_everything,
         inputs=[img_state_bbox],
-        outputs=[cond_img_bbox, segm_img_bbox, cls_info_bbox]
+        outputs=[img_state_bbox, cond_img_bbox, segm_img_bbox, cls_info_bbox]
     )
     cond_img_bbox.clear(
         clear_everything,
         inputs=[img_state_bbox],
-        outputs=[cond_img_bbox, segm_img_bbox, cls_info_bbox]
+        outputs=[img_state_bbox, cond_img_bbox, segm_img_bbox, cls_info_bbox]
     )
     segm_img_bbox.clear(
         clear_everything,
         inputs=[img_state_bbox],
-        outputs=[cond_img_bbox, segm_img_bbox, cls_info_bbox]
+        outputs=[img_state_bbox, cond_img_bbox, segm_img_bbox, cls_info_bbox]
     )
 
 

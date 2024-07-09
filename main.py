@@ -295,8 +295,8 @@ def clean_prompts(img_state):
 
 
 def register_point_mode():
-    img_state_points = gr.State(IMGState())
-    img_state_bbox = gr.State(IMGState())
+    img_state_points = gr.State(value=IMGState())
+    img_state_bbox = gr.State(value=IMGState())
     with gr.Row():
         with gr.Column(scale=1):
             gr.Markdown(title)

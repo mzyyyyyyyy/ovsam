@@ -328,7 +328,8 @@ def register_point_mode():
                     outputs=[img_state_points, cond_img_p, segm_img_p, cls_info],
                     examples_per_page=12,
                     fn=extract_img_feat,
-                    run_on_click=True
+                    run_on_click=True,
+                    cache_examples=False,
                 )
 
     # box mode tab
@@ -358,7 +359,8 @@ def register_point_mode():
                     outputs=[img_state_bbox, cond_img_bbox, segm_img_bbox, cls_info_bbox],
                     examples_per_page=12,
                     fn=extract_img_feat,
-                    run_on_click=True
+                    run_on_click=True,
+                    cache_examples=False,
                 )
 
     # extract image feature

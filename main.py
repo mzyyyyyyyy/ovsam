@@ -192,7 +192,7 @@ def segment_with_points(
     output_img = (output_img * 0.7 + color * 0.3).astype(np.uint8)
 
     output_img = Image.fromarray(output_img)
-    return img_state, image, output_img, cls_info
+    return image, output_img, cls_info
 
 
 def segment_with_bbox(
@@ -278,7 +278,7 @@ def extract_img_feat(img, img_state):
             return None, None, "CUDA OOM, please try again later."
         else:
             raise
-    return img_state, img, None, "Please try to click something."
+    return img, None, "Please try to click something."
 
 
 def clear_everything(img_state):
@@ -325,7 +325,7 @@ def register_point_mode():
                 gr.Examples(
                     examples=examples,
                     inputs=[cond_img_p, img_state_points],
-                    outputs=[img_state_points, cond_img_p, segm_img_p, cls_info],
+                    outputs=[cond_img_p, segm_img_p, cls_info],
                     examples_per_page=12,
                     fn=extract_img_feat,
                     run_on_click=True,
@@ -356,7 +356,7 @@ def register_point_mode():
                 gr.Examples(
                     examples=examples,
                     inputs=[cond_img_bbox, img_state_bbox],
-                    outputs=[img_state_bbox, cond_img_bbox, segm_img_bbox, cls_info_bbox],
+                    outputs=[cond_img_bbox, segm_img_bbox, cls_info_bbox],
                     examples_per_page=12,
                     fn=extract_img_feat,
                     run_on_click=True,
@@ -367,12 +367,12 @@ def register_point_mode():
     cond_img_p.upload(
         extract_img_feat,
         [cond_img_p, img_state_points],
-        outputs=[img_state_points, cond_img_p, segm_img_p, cls_info]
+        outputs=[cond_img_p, segm_img_p, cls_info]
     )
     cond_img_bbox.upload(
         extract_img_feat,
         [cond_img_bbox, img_state_bbox],
-        outputs=[img_state_bbox, cond_img_bbox, segm_img_bbox, cls_info]
+        outputs=[cond_img_bbox, segm_img_bbox, cls_info]
     )
 
     # get user added points
@@ -383,7 +383,7 @@ def register_point_mode():
     ).then(
         segment_with_points,
         inputs=[cond_img_p, img_state_points],
-        outputs=[img_state_points, cond_img_p, segm_img_p, cls_info]
+        outputs=[cond_img_p, segm_img_p, cls_info]
     )
     cond_img_bbox.select(
         get_bbox_with_draw,

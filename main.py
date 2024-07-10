@@ -251,7 +251,7 @@ def segment_with_bbox(
     output_img = (output_img * 0.7 + color * 0.3).astype(np.uint8)
 
     output_img = Image.fromarray(output_img)
-    return img_state, image, output_img, cls_info
+    return image, output_img, cls_info
 
 
 def extract_img_feat(img, img_state):
@@ -392,7 +392,7 @@ def register_point_mode():
     ).then(
         segment_with_bbox,
         inputs=[cond_img_bbox, img_state_bbox],
-        outputs=[img_state_bbox, cond_img_bbox, segm_img_bbox, cls_info_bbox]
+        outputs=[cond_img_bbox, segm_img_bbox, cls_info_bbox]
     )
 
     # clean prompts

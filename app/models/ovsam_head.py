@@ -135,56 +135,67 @@ class OVSAMHead(BaseModule):
             backbone=None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Predicts masks. See 'forward' for more details."""
-        num_instances = int(sparse_prompt_embeddings.size(0))
+        num_instances = int(sparse_prompt_embeddings.size(0)) # sparse_prompt_embeddings, num_instances 究竟是个啥呀？
         # Concatenate output tokens
         output_tokens = torch.cat([
             self.label_token.weight,
             self.mask_decoder.mask_tokens.weight], dim=0
-        )
-        output_tokens = output_tokens.unsqueeze(0).expand(num_instances, -1, -1)
-        queries = torch.cat((output_tokens, sparse_prompt_embeddings), dim=1)
+        ) # torch.Size([2, 256])
+        output_tokens = output_tokens.unsqueeze(0).expand(num_instances, -1, -1) # torch.Size([1, 2, 256])
+        queries = torch.cat((output_tokens, sparse_prompt_embeddings), dim=1) # torch.Size([1, 4, 256])
 
         # image_embeddings = torch.repeat_interleave(image_embeddings, num_instances, dim=0)
-        image_embeddings = image_embeddings + dense_prompt_embeddings
-        pos_img = torch.repeat_interleave(image_pe, num_instances, dim=0)
+        image_embeddings = image_embeddings + dense_prompt_embeddings # torch.Size([1, 256, 64, 64])，image_embeddings 就是 neck 输出的特征。
+        pos_img = torch.repeat_interleave(image_pe, num_instances, dim=0) # torch.Size([1, 256, 64, 64])
         b, c, h, w = image_embeddings.shape
 
         # Run the transformer
-        queries, mask_feats = self.mask_decoder.transformer(image_embeddings, pos_img, queries)
-        label_query = queries[:, 0, :]
-        mask_embeds = queries[:, 1:(1 + self.mask_decoder.num_mask_tokens), :]
+        queries, mask_feats = self.mask_decoder.transformer(image_embeddings, pos_img, queries) # torch.Size([1, 4, 256]) torch.Size([1, 4096, 256]) 这是 SAM decoder 的重点，需要深入！
+        label_query = queries[:, 0, :] # torch.Size([1, 256])
+        mask_embeds = queries[:, 1:(1 + self.mask_decoder.num_mask_tokens), :] # torch.Size([1, 1, 256])
 
         # Upscale mask embeddings and predict masks using the mask tokens
-        mask_feats = mask_feats.transpose(1, 2).view(b, c, h, w)
-        mask_feats = self.mask_decoder.output_upscaling(mask_feats)
+        mask_feats = mask_feats.transpose(1, 2).view(b, c, h, w) # torch.Size([1, 256, 64, 64])
+        mask_feats = self.mask_decoder.output_upscaling(mask_feats) # torch.Size([1, 32, 256, 256])
         mask_queries_list: List[torch.Tensor] = []
         for i in range(self.mask_decoder.num_mask_tokens):
             mask_queries_list.append(self.mask_decoder.output_hypernetworks_mlps[i](mask_embeds[:, i, :]))
-        mask_queries = torch.stack(mask_queries_list, dim=1)
+        mask_queries = torch.stack(mask_queries_list, dim=1) # torch.Size([1, 1, 32])
         b, c, h, w = mask_feats.shape
-        masks = (mask_queries @ mask_feats.view(b, c, h * w)).view(b, -1, h, w)
+        masks = (mask_queries @ mask_feats.view(b, c, h * w)).view(b, -1, h, w) # torch.Size([1, 1, 256, 256])
+        # 计算查询与特征的相似度：通过矩阵乘法（@）将每个查询向量与所有空间位置的特征进行交互，生成一个形状为 (b, num_queries, h * w) 的张量。
+        # 每个查询向量与空间特征图中的每个位置进行匹配，生成每个位置的响应值。
+        # 重塑为空间掩码：将上述结果从 (b, num_queries, h * w) 转换为 (b, num_queries, h, w)，将每个查询生成一个与原图像大小相同的掩码。
 
         # Generate class labels
         if self.with_label_token:
+            # （1）生成 cls_embed
             cls_embed_list = []
             assert self.mask_decoder.num_mask_tokens == 1
             for i in range(self.mask_decoder.num_mask_tokens):
                 cls_embed_list.append(self.label_mlp(label_query))
-            cls_embed = torch.stack(cls_embed_list, dim=1)
+            cls_embed = torch.stack(cls_embed_list, dim=1) # torch.Size([1, 1, 768])
+            
+            # （2）生成 ROIs 和提取 ROI 特征
+            # 在这一部分用到 mask 内包含的 FPN features 和 CLIP features.
             if self.gen_box:
                 bboxes = mask2bbox(masks.sigmoid()[:, 0] > 0.5) * 4
                 roi_list = bbox2roi([bboxes])
             roi_feats = self.roi(fpn_feats, roi_list)
             roi_feats = self.roi_conv(roi_feats)
-            roi_feats = roi_feats.mean(dim=-1).mean(dim=-1)
+            roi_feats = roi_feats.mean(dim=-1).mean(dim=-1) # torch.Size([1, 768])
             if self.roi_extractor_single:
                 roi_feats_clip = self.roi_extractor_single(
                     backbone.get_clip_feature(backbone_feature[-1:]), roi_list
                 )
                 roi_feats_clip = backbone.forward_feat(roi_feats_clip)
                 roi_feats = self.roi_merge_proj(torch.cat([roi_feats, roi_feats_clip], dim=-1))
-            roi_feats = roi_feats[:, None] + 0 * cls_embed
-            cls_pred = self.forward_logit(roi_feats)
+            roi_feats = roi_feats[:, None] + 0 * cls_embed # torch.Size([1, 1, 768])
+            # 问题来了，如果这一步都没有用到 cls_embed，那么相当于在生成 cls_info 的时候，
+            # 根本没有用到 query[0]，那他还有存在的必要吗？
+
+            # （3）生成类别预测
+            cls_pred = self.forward_logit(roi_feats) # torch.Size([1, 1, 1204])
         else:
             cls_pred = None
         return masks, None, cls_pred
@@ -202,16 +213,16 @@ class OVSAMHead(BaseModule):
             backbone=None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], torch.Tensor]:
         num_prompts = len(sparse_prompt_embeddings)
-        image_embeddings = torch.repeat_interleave(image_embeddings, num_prompts, dim=0)
+        image_embeddings = torch.repeat_interleave(image_embeddings, num_prompts, dim=0) # torch.Size([1, 256, 64, 64])
 
         masks, _, cls_pred = self.predict_masks(
             image_embeddings=image_embeddings,
-            image_pe=image_pe,
-            sparse_prompt_embeddings=sparse_prompt_embeddings,
-            dense_prompt_embeddings=dense_prompt_embeddings,
-            fpn_feats=fpn_feats,
+            image_pe=image_pe, # torch.Size([1, 256, 64, 64])
+            sparse_prompt_embeddings=sparse_prompt_embeddings, # torch.Size([1, 2, 256])
+            dense_prompt_embeddings=dense_prompt_embeddings, # torch.Size([1, 256, 64, 64])
+            fpn_feats=fpn_feats, # 四个 FPN 特征
             roi_list=None,
-            backbone_feature=backbone_feats,
+            backbone_feature=backbone_feats, # 四个 CLIP 特征
             backbone=backbone,
         )
 
@@ -220,7 +231,7 @@ class OVSAMHead(BaseModule):
             mask_slice = slice(1, None)
         else:
             mask_slice = slice(0, 1)
-        masks = masks[:, mask_slice, :, :]
+        masks = masks[:, mask_slice, :, :] # torch.Size([1, 1, 256, 256])
 
         # Prepare output
-        return masks, None, cls_pred
+        return masks, None, cls_pred # torch.Size([1, 1, 1204])

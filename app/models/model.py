@@ -43,10 +43,10 @@ class SAMSegmentor(BaseModel):
         self.enable_backbone = enable_backbone
 
     def extract_feat(self, inputs):
-        backbone_feat = self.backbone(inputs)
-        neck_feat = self.neck(backbone_feat)
+        backbone_feat = self.backbone(inputs) # 四个元素，shape 分别为(1, 384, 256, 256)(1, 768, 128, 128)(1, 1536, 64, 64)(1, 3072, 32, 32)
+        neck_feat = self.neck(backbone_feat) # (1, 256, 64, 64), 这是一个多层 Transformer，它就是本方法训练好的学生模型。
         if self.fpn_neck is not None:
-            fpn_feat = self.fpn_neck(backbone_feat)
+            fpn_feat = self.fpn_neck(backbone_feat) # 四个元素，shape 分别为(1, 256, 256, 256)(1, 256, 128, 128)(1, 256, 64, 64)(1, 256, 32, 32)，这个模块也是可以训练的。
         else:
             fpn_feat = None
 
@@ -62,7 +62,7 @@ class SAMSegmentor(BaseModel):
             image_size=(1024, 1024),
             with_points='point_coords' in prompts,
             with_bboxes='bboxes' in prompts,
-        )
+        )# torch.Size([1, 2, 256]) torch.Size([1, 256, 64, 64]) 这就是 prompt encoder.
 
         kwargs = dict()
         if self.enable_backbone:
@@ -71,21 +71,22 @@ class SAMSegmentor(BaseModel):
             kwargs['fpn_feats'] = feat_cache['fpn_feat']
         low_res_masks, iou_predictions, cls_pred = self.mask_decoder(
             image_embeddings=feat_cache['neck_feat'],
-            image_pe=self.pe.get_dense_pe(),
+            image_pe=self.pe.get_dense_pe(), 
+            # 这个也许是图像的位置编码？答：是的，不用细究细节，就是已经预存储好的不可学习的参数。
             sparse_prompt_embeddings=sparse_embed,
             dense_prompt_embeddings=dense_embed,
             multi_mask_output=False,
             **kwargs
-        )
+        ) # torch.Size([1, 1, 256, 256]) torch.Size([1, 1, 1204])
         masks = F.interpolate(
             low_res_masks,
             scale_factor=4.,
             mode='bilinear',
             align_corners=False,
-        )
+        ) # torch.Size([1, 1, 1024, 1024])
 
         masks = masks.sigmoid()
-        cls_pred = cls_pred.softmax(-1)[..., :-1]
+        cls_pred = cls_pred.softmax(-1)[..., :-1] # torch.Size([1, 1, 1203])
         return masks.detach().cpu().numpy(), cls_pred.detach().cpu()
 
     def forward(self, inputs):

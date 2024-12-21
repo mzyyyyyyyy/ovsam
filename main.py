@@ -59,7 +59,7 @@ class IMGState:
         self.img = img
         self.img_feat = img_feat
 
-        self.available_to_set = False
+        self.available_to_set = True
 
     def clear(self):
         self.img = None
@@ -149,25 +149,25 @@ def segment_with_points(
         image,
         img_state,
 ):
-    if img_state.available:
+    if not img_state.available:
         return None, None, "State Error, please try again."
     output_img = img_state.img
     h, w = output_img.shape[:2]
 
-    input_points = torch.tensor(img_state.selected_points, dtype=torch.float32, device=device)
+    input_points = torch.tensor(img_state.selected_points, dtype=torch.float32, device=device) # torch.Size([1, 2])，记录的应该是 point prompt 的坐标。
     prompts = InstanceData(
         point_coords=input_points[None],
-    )
+    ) # 将这个坐标信息存储到专门的数据结构中了。
 
     try:
         img_state.to_device()
-        masks, cls_pred = model.extract_masks(img_state.img_feat, prompts)
+        masks, cls_pred = model.extract_masks(img_state.img_feat, prompts) # 输入的是刚刚提取出来的图像特征和点的坐标
         img_state.to_device('cpu')
 
         masks = masks[0, 0, :h, :w]
-        masks = masks > 0.5
+        masks = masks > 0.5 # (726, 1024)
 
-        cls_pred = cls_pred[0][0]
+        cls_pred = cls_pred[0][0] # torch.Size([1203])
         scores, indices = torch.topk(cls_pred, 1)
         scores, indices = scores.tolist(), indices.tolist()
     except RuntimeError as e:
@@ -179,7 +179,7 @@ def segment_with_points(
             raise
     names = []
     for ind in indices:
-        names.append(LVIS_NAMES[ind].replace('_', ' '))
+        names.append(LVIS_NAMES[ind].replace('_', ' ')) # 找到这个indice对应的标签名称
 
     cls_info = ""
     for name, score in zip(names, scores):
@@ -199,7 +199,7 @@ def segment_with_bbox(
         image,
         img_state
 ):
-    if img_state.available:
+    if not img_state.available:
         return None, None, "State Error, please try again."
     if len(img_state.selected_bboxes) != 2:
         return image, None, ""
@@ -267,7 +267,7 @@ def extract_img_feat(img, img_state):
         img_tensor = torch.tensor(img_numpy, device=device, dtype=torch.float32).permute((2, 0, 1))[None]
         img_tensor = (img_tensor - mean) / std
         img_tensor = F.pad(img_tensor, (0, IMG_SIZE - new_w, 0, IMG_SIZE - new_h), 'constant', 0)
-        feat_dict = model.extract_feat(img_tensor)
+        feat_dict = model.extract_feat(img_tensor) # input = (1, 3, 1024, 1024)
         img_state.set_img(img_numpy, feat_dict)
         img_state.to_device('cpu')
         print_log(f"Successfully generated the image feats.", logger='current')
@@ -295,8 +295,11 @@ def clean_prompts(img_state):
 
 
 def register_point_mode():
+
     img_state_points = gr.State(value=IMGState())
     img_state_bbox = gr.State(value=IMGState())
+    # img_state_points 和 img_state_bbox 是状态对象，
+    # 用来在不同的操作间存储和传递用户标记的点和框信息。
     with gr.Row():
         with gr.Column(scale=1):
             gr.Markdown(title)
@@ -306,28 +309,33 @@ def register_point_mode():
         with gr.Row(variant="panel"):
             with gr.Column(scale=1):
                 cond_img_p = gr.Image(label="Input Image", height=512, type="pil")
+                # cond_img_p 是一个 gr.Image 组件，用于上传用户的输入图片。
 
             with gr.Column(scale=1):
                 segm_img_p = gr.Image(label="Segment", interactive=False, height=512, type="pil")
+                # segm_img_p 显示图像的分割结果
 
         with gr.Row():
             with gr.Column():
                 with gr.Row():
                     with gr.Column():
                         clean_btn_p = gr.Button("Clean Prompts", variant="secondary")
+                        # 操作按钮：clean_btn_p，清除用户标记的点（例如标记的目标区域）。
                         clear_btn_p = gr.Button("Restart", variant="secondary")
+                        # 操作按钮：重置当前图像和分割结果
             with gr.Column():
                 cls_info = gr.Textbox("", label='Labels')
+                # 标签信息，是一个文本框，用于显示分割结果的标签。
 
         with gr.Row():
             with gr.Column():
                 gr.Markdown("Try some of the examples below ⬇️")
                 gr.Examples(
                     examples=examples,
-                    inputs=[cond_img_p, img_state_points],
-                    outputs=[cond_img_p, segm_img_p, cls_info],
+                    inputs=[cond_img_p, img_state_points], # 输入
+                    outputs=[cond_img_p, segm_img_p, cls_info], # 输出
                     examples_per_page=12,
-                    fn=extract_img_feat,
+                    fn=extract_img_feat, # 每个示例都会调用 extract_img_feat 函数
                     run_on_click=True,
                     cache_examples=False,
                 )
@@ -374,6 +382,9 @@ def register_point_mode():
         [cond_img_bbox, img_state_bbox],
         outputs=[cond_img_bbox, segm_img_bbox, cls_info]
     )
+    # 用户上传图片与执行分割：cond_img_p.upload() 和 cond_img_bbox.upload() 
+    # 分别在点模式和框模式下触发 extract_img_feat 函数，该函数会对上传的图像进行处理，
+    # 输出图像、分割结果和标签。
 
     # get user added points
     cond_img_p.select(
@@ -385,6 +396,8 @@ def register_point_mode():
         inputs=[cond_img_p, img_state_points],
         outputs=[cond_img_p, segm_img_p, cls_info]
     )
+    # 获取用户标记的点和框：点模式：cond_img_p.select() 用来获取用户在图像上选择的点
+    # （例如通过绘制点来指定分割区域），然后调用 segment_with_points 执行分割。
     cond_img_bbox.select(
         get_bbox_with_draw,
         [cond_img_bbox, img_state_bbox],
@@ -395,7 +408,7 @@ def register_point_mode():
         outputs=[cond_img_bbox, segm_img_bbox, cls_info_bbox]
     )
 
-    # clean prompts
+    # clean prompts 清除和重置
     clean_btn_p.click(
         clean_prompts,
         inputs=[img_state_points],
@@ -441,7 +454,7 @@ def register_point_mode():
 
 
 if __name__ == '__main__':
-    with gr.Blocks(css=css, title="Open-Vocabulary SAM") as demo:
+    with gr.Blocks(css=css, title="Open-Vocabulary SAM") as demo: # 界面启动
         register_point_mode()
     demo.queue()
-    demo.launch(show_api=False)
+    demo.launch(share=True, show_api=True)

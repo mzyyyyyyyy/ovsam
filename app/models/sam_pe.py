@@ -127,12 +127,12 @@ class SAMPromptEncoder(BaseModule):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         assert with_points or with_bboxes or with_masks
         bs = len(instances)
-        sparse_embeddings = torch.empty((bs, 0, self.embed_dim), device=self.device)
+        sparse_embeddings = torch.empty((bs, 0, self.embed_dim), device=self.device) # torch.Size([1, 0, 256])
         if with_points:
             assert 'point_coords' in instances
-            coords = instances.point_coords
+            coords = instances.point_coords # 坐标 
             labels = torch.ones_like(coords)[:, :, 0]
-            point_embeddings = self._embed_points(coords, labels, pad=not with_bboxes)
+            point_embeddings = self._embed_points(coords, labels, pad=not with_bboxes) # 将坐标通过位置编码转换为 point_embeddings. torch.Size([1, 2, 256])
             sparse_embeddings = torch.cat([sparse_embeddings, point_embeddings], dim=1)
 
         if with_bboxes:
@@ -148,5 +148,6 @@ class SAMPromptEncoder(BaseModule):
         else:
             dense_embeddings = self.no_mask_embed.weight.reshape(1, -1, 1, 1).expand(
                 bs, -1, self.image_embedding_size[0], self.image_embedding_size[1]
-            )
+            ) # torch.Size([1, 256, 64, 64])，self.no_mask_embed.weight是 prompt encoder 中可以训练的参数，但在本模型中可能被冻结。
+            # 也就是说，这个 dense_embedding 本身与点坐标位置没有关系，他就是 prompt encoder 自带的参数。
         return sparse_embeddings, dense_embeddings

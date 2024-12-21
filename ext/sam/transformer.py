@@ -80,12 +80,12 @@ class TwoWayTransformer(nn.Module):
         """
         # BxCxHxW -> BxHWxC == B x N_image_tokens x C
         bs, c, h, w = image_embedding.shape
-        image_embedding = image_embedding.flatten(2).permute(0, 2, 1)
-        image_pe = image_pe.flatten(2).permute(0, 2, 1)
+        image_embedding = image_embedding.flatten(2).permute(0, 2, 1) # torch.Size([1, 4096, 256])
+        image_pe = image_pe.flatten(2).permute(0, 2, 1) # torch.Size([1, 4096, 256])
 
         # Prepare queries
-        queries = point_embedding
-        keys = image_embedding
+        queries = point_embedding # torch.Size([1, 4, 256])
+        keys = image_embedding # torch.Size([1, 4096, 256])
 
         # Apply transformer blocks and final layernorm
         for layer in self.layers:
@@ -97,11 +97,11 @@ class TwoWayTransformer(nn.Module):
             )
 
         # Apply the final attention layer from the points to the image
-        q = queries + point_embedding
-        k = keys + image_pe
-        attn_out = self.final_attn_token_to_image(q=q, k=k, v=keys)
+        q = queries + point_embedding # torch.Size([1, 4, 256])
+        k = keys + image_pe # torch.Size([1, 4096, 256])
+        attn_out = self.final_attn_token_to_image(q=q, k=k, v=keys) # torch.Size([1, 4, 256])
         queries = queries + attn_out
-        queries = self.norm_final_attn(queries)
+        queries = self.norm_final_attn(queries) # torch.Size([1, 4, 256])
 
         return queries, keys
 
@@ -152,9 +152,9 @@ class TwoWayAttentionBlock(nn.Module):
         self, queries: Tensor, keys: Tensor, query_pe: Tensor, key_pe: Tensor
     ) -> Tuple[Tensor, Tensor]:
         # Self attention block
-        if self.skip_first_layer_pe:
+        if self.skip_first_layer_pe: # 在这里，第一层的时候是 True。
             queries = self.self_attn(q=queries, k=queries, v=queries)
-        else:
+        else: # 好奇怪，这里为啥要相同的 q 加起来呢？
             q = queries + query_pe
             attn_out = self.self_attn(q=q, k=q, v=queries)
             queries = queries + attn_out
@@ -163,12 +163,12 @@ class TwoWayAttentionBlock(nn.Module):
         # Cross attention block, tokens attending to image embedding
         q = queries + query_pe
         k = keys + key_pe
-        attn_out = self.cross_attn_token_to_image(q=q, k=k, v=keys)
+        attn_out = self.cross_attn_token_to_image(q=q, k=k, v=keys) # torch.Size([1, 4, 256])
         queries = queries + attn_out
         queries = self.norm2(queries)
 
         # MLP block
-        mlp_out = self.mlp(queries)
+        mlp_out = self.mlp(queries) # torch.Size([1, 4, 256])
         queries = queries + mlp_out
         queries = self.norm3(queries)
 
@@ -177,7 +177,7 @@ class TwoWayAttentionBlock(nn.Module):
         k = keys + key_pe
         attn_out = self.cross_attn_image_to_token(q=k, k=q, v=queries)
         keys = keys + attn_out
-        keys = self.norm4(keys)
+        keys = self.norm4(keys) # torch.Size([1, 4096, 256])
 
         return queries, keys
 

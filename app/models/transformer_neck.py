@@ -146,6 +146,9 @@ class MultiLayerTransformerNeck(BaseModule):
             feat, size = self.patch_embeds[idx](feat)
             feat = feat.unflatten(1, size)
             feat = feat + self.level_encoding.weight[level_cnt]
+            # 在视觉 Transformer 模型（或多层网络架构中），特征图在每一层之间传递时，可能会失去某些层级信息。
+            # 通过使用 level_encoding，我们可以为每个特征图添加一个独特的 层级标识符，
+            # 这样每一层的特征图就会包含更多关于其来源层的信息，提升模型对不同层次特征的区分能力。
             input_embeddings.append(feat)
             level_cnt += 1
 
